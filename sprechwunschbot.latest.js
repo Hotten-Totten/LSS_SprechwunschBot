@@ -12,7 +12,7 @@ Version: 1.0.0
   console.log('[SPRECHB] LIVE', window.__SPRECHB_VERSION__);
 
   // ===== Loader-Check =====
-  const EXPECT_KEY = 'SPRECHB-9f3c2d4a1b7e49d8a6c1f0b2c4d6e8aa10022026';
+  const EXPECT_KEY = 'SPRECHB-9f3c2d4a1b7e49d8a6c1f0b2c4d6e8aa10022027';
   if (window.__SPRECHB_LOADER_KEY__ !== EXPECT_KEY) {
     console.warn('SPRECHB] falscher Loader – Abbruch');
     return;
