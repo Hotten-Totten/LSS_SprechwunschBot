@@ -109,7 +109,7 @@ Version: 1.0.0
         setTimeout(processStatus5, 700);
       } else {
         document.body.removeChild(frame);
-        alert('❌ Kein Gefangenentransport-Button gefunden!');
+        //alert('❌ Kein Gefangenentransport-Button gefunden!');
         if (done) done();
       }
     };
