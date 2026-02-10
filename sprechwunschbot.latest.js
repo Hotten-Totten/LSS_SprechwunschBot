@@ -29,7 +29,7 @@ Version: 1.0.0
 
     // ===== HIER BEGINNT DER EIGENTLICHE SCRIPTCODE UND KANN EDITIERT WERDEN =====
 
-  const requestListSel = '#radio_messages_important';
+   const requestListSel = '#radio_messages_important';
   const vehicleLinkSel = 'a.lightbox-open:not(.mission-radio-button)';
   const patientBtnSel  = 'a.btn.btn-success[href*="/patient/"]';
   const prisonBtnSel   = 'a.btn.btn-success[data-prison-id]';
@@ -109,7 +109,7 @@ Version: 1.0.0
         setTimeout(processStatus5, 700);
       } else {
         document.body.removeChild(frame);
-        //alert('❌ Kein Gefangenentransport-Button gefunden!');
+        alert('❌ Kein Gefangenentransport-Button gefunden!');
         if (done) done();
       }
     };
