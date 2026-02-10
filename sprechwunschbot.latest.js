@@ -1,14 +1,33 @@
-// ==UserScript==
-// @name         SprechwunschBot - Mit Fortschrittsanzeige
-// @namespace    https://deinprojekt.de/
-// @version      1.1.0
-// @description  Arbeitet Patienten- und Gefangenentransporte nacheinander ab mit Zähler für Fortschritt.
-// @match        https://www.leitstellenspiel.de/*
-// @grant        none
-// ==/UserScript==
+/* 
+LSS_SrechwunschBot
+Version: 1.0.0
+*/
 
-(function() {
+(function () {
   'use strict';
+
+  // ===== SOFORT exportieren =====
+  window.__SPRECHB_VERSION__ = '1.0.0';
+
+  console.log('[SPRECHB] LIVE', window.__SPRECHB_VERSION__);
+
+  // ===== Loader-Check =====
+  const EXPECT_KEY = 'SPRECHB-9f3c2d4a1b7e49d8a6c1f0b2c4d6e8aa10022026';
+  if (window.__SPRECHB_LOADER_KEY__ !== EXPECT_KEY) {
+    console.warn('SPRECHB] falscher Loader – Abbruch');
+    return;
+  }
+
+  // ===== Doppelstart verhindern =====
+  if (window._SPRECHB_LOADED__) {
+    console.warn('[SPRECHB] Doppelstart verhindert');
+    return;
+  }
+  window.__SPRECHB_LOADED__ = true;
+
+  console.log('[SPRECHB] ✅ SprechwunschBot initialisiert');
+
+    // ===== HIER BEGINNT DER EIGENTLICHE SCRIPTCODE UND KANN EDITIERT WERDEN =====
 
   const requestListSel = '#radio_messages_important';
   const vehicleLinkSel = 'a.lightbox-open:not(.mission-radio-button)';
