@@ -110,7 +110,6 @@ Version: 1.0.0
       } else {
         document.body.removeChild(frame);
         alert('❌ Kein Gefangenentransport-Button gefunden!');
-        btn.click();
         if (done) done();
       }
     };
@@ -159,8 +158,7 @@ Version: 1.0.0
     } catch (e) {
       console.error('Automatisierung abgebrochen:', e);
       alert('❌ ' + e.message);
-      btn.click();
-    }
+      }
   }
 
   function addButton() {
