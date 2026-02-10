@@ -27,8 +27,6 @@ Version: 1.0.0
 
   console.log('[SPRECHB] ✅ SprechwunschBot initialisiert');
 
-    // ===== HIER BEGINNT DER EIGENTLICHE SCRIPTCODE UND KANN EDITIERT WERDEN =====
-
    const requestListSel = '#radio_messages_important';
   const vehicleLinkSel = 'a.lightbox-open:not(.mission-radio-button)';
   const patientBtnSel  = 'a.btn.btn-success[href*="/patient/"]';
@@ -158,7 +156,7 @@ Version: 1.0.0
     } catch (e) {
       console.error('Automatisierung abgebrochen:', e);
       alert('❌ ' + e.message);
-      }
+    }
   }
 
   function addButton() {
