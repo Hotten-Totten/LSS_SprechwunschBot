@@ -1,4 +1,11 @@
-
+// ==UserScript==
+// @name         SprechwunschBot - Mit Fortschrittsanzeige
+// @namespace    https://deinprojekt.de/
+// @version      1.1.0
+// @description  Arbeitet Patienten- und Gefangenentransporte nacheinander ab mit Zähler für Fortschritt.
+// @match        https://www.leitstellenspiel.de/*
+// @grant        none
+// ==/UserScript==
 
 (function() {
   'use strict';
