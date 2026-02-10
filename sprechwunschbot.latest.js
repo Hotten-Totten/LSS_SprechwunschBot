@@ -159,6 +159,7 @@ Version: 1.0.0
     } catch (e) {
       console.error('Automatisierung abgebrochen:', e);
       alert('❌ ' + e.message);
+      btn.click();
     }
   }
 
