@@ -231,7 +231,7 @@ botRunning = true;
 //botRunning = false;
 
     // Auto-Reload optional: wenn du es leise willst, lass es drin oder kommentier es aus
-//    window.location.reload();
+    window.location.reload();
 
   } catch (e) {
     console.error('Automatisierung abgebrochen:', e);
