@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         SprechwunschBot - Mit Fortschrittsanzeige
+// @name         SprechwunschBot - Mit Fortschrittsanzeige (stabil + Ticker + Retry + Leise)
 // @namespace    https://deinprojekt.de/
-// @version      1.2.2
-// @description  Arbeitet Patienten- und Gefangenentransporte nacheinander ab mit Zähler für Fortschritt.
+// @version      1.3.0
+// @description  Arbeitet Patienten- und Gefangenentransporte nacheinander ab, mit Status-Ticker (1 Zeile), Retry und Leise-Modus.
 // @match        https://www.leitstellenspiel.de/*
 // @grant        none
 // ==/UserScript==
@@ -10,52 +10,28 @@
 (function() {
   'use strict';
 
-  const requestListSel = '#radio_messages_important';
-  const vehicleLinkSel = 'a.lightbox-open:not(.mission-radio-button)';
-  const patientBtnSel  = 'a.btn.btn-success[href*="/patient/"]';
-  const prisonBtnSel   = 'a.btn.btn-success[data-prison-id]';
-  const nextVehBtnSel  = '#next-vehicle-fms-5';
+  // ===================== SETTINGS =====================
   const QUIET_MODE = true;        // true = keine Alerts (auch bei Fehler)
   const PRISON_RETRIES = 2;       // Anzahl Retry-Versuche (zusätzlich zum ersten Versuch)
   const PRISON_RETRY_PAUSE = 900; // Pause zwischen Retries in ms
   const AUTO_STOP_IF_EMPTY = true;
 
+  // ===================== SELECTORS =====================
+  const requestListSel = '#radio_messages_important';
+  const vehicleLinkSel = 'a.lightbox-open:not(.mission-radio-button)';
+  const patientBtnSel  = 'a.btn.btn-success[href*="/patient/"]';
+  const prisonBtnSel   = 'a.btn.btn-success[data-prison-id]';
+  const nextVehBtnSel  = '#next-vehicle-fms-5';
 
-  // Zähler
+  // ===================== COUNTERS / STATE =====================
   let totalRequests = 0;
   let patientsDone = 0;
   let prisonersDone = 0;
   let skipped = 0;
 
-  // Hilfsfunktionen Anfang
-let tickerQueue = [];
-let tickerRunning = false;
+  let botRunning = false;
 
-    let botRunning = false;
-
-
-function ticker(msg) {
-  tickerQueue.push(msg);
-  if (!tickerRunning) runTicker();
-}
-
-async function runTicker() {
-  tickerRunning = true;
-  const el = document.getElementById('progress-ticker');
-  while (tickerQueue.length) {
-    const text = tickerQueue.shift();
-    if (el) {
-      el.textContent = text;
-      el.style.transform = 'translateY(-5px)';
-      await sleep(50);
-      el.style.transform = 'translateY(0)';
-    }
-    await sleep(650); // Geschwindigkeit
-  }
-  tickerRunning = false;
-}
-
-  // Hilfsfunktionen Ende
+  // ===================== HELPERS =====================
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   async function fetchDoc(url) {
@@ -66,228 +42,259 @@ async function runTicker() {
   }
 
   function updateProgress(extra = '') {
-      //const progressText = `Patienten: ${patientsDone} / ${totalRequests} | Gefangene: ${prisonersDone} / ${totalRequests} | Skip: ${skipped}${extra ? ' | ' + extra : ''}`;
-      const progressText =``;
-    console.log(progressText);
+    const progressText =
+  //    `🚑 ${patientsDone}/${totalRequests} | 🚓 ${prisonersDone}/${totalRequests} | ⏭️ ${skipped}` +
+      (extra ? ` | ${extra}` : '');
+      `🚑 ${patientsDone}/${totalRequests} | 🚓 ${prisonersDone}/${totalRequests}`+ (extra ? ` | ${extra}` : '');
+    console.log('[SprechwunschBot]', progressText);
+
     const progressEl = document.getElementById('progress-status');
     if (progressEl) progressEl.textContent = progressText;
   }
 
+  // ===================== TICKER (1 Zeile) =====================
+  let tickerQueue = [];
+  let tickerRunning = false;
+
+  function ticker(msg) {
+    tickerQueue.push(msg);
+    if (!tickerRunning) runTicker();
+  }
+
+  async function runTicker() {
+    tickerRunning = true;
+    const el = document.getElementById('progress-ticker');
+
+    while (tickerQueue.length) {
+      const text = tickerQueue.shift();
+      if (el) {
+        el.textContent = text;
+        el.style.transform = 'translateY(-5px)';
+        await sleep(50);
+        el.style.transform = 'translateY(0)';
+      }
+      await sleep(650);
+    }
+
+    tickerRunning = false;
+  }
+
+  // ===================== CORE LOOPS =====================
   async function followStatus5Loop(startDoc) {
     let doc = startDoc;
-    // Hard-Limit, falls irgendwas in eine Endlosschleife läuft
+
+    // Guard, damit niemals Endlosschleife
     for (let guard = 0; guard < 80; guard++) {
       const nextBtn = doc.querySelector(nextVehBtnSel);
       if (!nextBtn || !nextBtn.href) return doc;
+
       doc = await fetchDoc(nextBtn.href);
       await sleep(120);
     }
+
     throw new Error('Status-5 Schleife abgebrochen (Guard-Limit erreicht).');
   }
 
   async function handlePatientTransport(baseUrl) {
-      ticker(`Patienten-Transport wird abgearbeitet`);
     const doc = await fetchDoc(baseUrl);
     const btn = doc.querySelector(patientBtnSel);
+
     if (!btn || !btn.href) throw new Error('Kein Patienten-Transportbutton gefunden!');
+
     const nextDoc = await fetchDoc(btn.href);
     await followStatus5Loop(nextDoc);
+
     patientsDone++;
     updateProgress();
+    return true;
   }
 
-async function handlePrisonTransport(baseUrl) {
-  const url = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'load_all_prisons=true&show_only_available=true';
-  const doc = await fetchDoc(url);
+  async function handlePrisonTransport(baseUrl) {
+    const url = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'load_all_prisons=true&show_only_available=true';
+    const doc = await fetchDoc(url);
 
-  const btn = doc.querySelector(prisonBtnSel);
-  if (!btn || !btn.href) {
-    ticker('Kein Gefangenentransport verfügbar');
-    return false; // wichtig: kein Skip
+    const btn = doc.querySelector(prisonBtnSel);
+    if (!btn || !btn.href) {
+      // Kein "Fehler" -> einfach nichts zu tun
+      ticker('⏭️ Kein Gefangenentransport verfügbar');
+      return false; // wichtig: NICHT als Skip zählen
+    }
+
+    const nextDoc = await fetchDoc(btn.href);
+    await followStatus5Loop(nextDoc);
+
+    prisonersDone++;
+    updateProgress();
+    return true;
   }
 
-  const nextDoc = await fetchDoc(btn.href);
-  await followStatus5Loop(nextDoc);
-
-  prisonersDone++;
-  updateProgress();
-  return true;
-}
-
-async function processAll() {
+  // ===================== MAIN =====================
+  async function processAll() {
     if (botRunning) {
-  ticker('⛔ Bot läuft bereits');
-  return;
-}
-botRunning = true;
-  ticker('Abarbeitung gestartet');
-
-  const failures = [];
-  try {
-    const list = document.querySelector(requestListSel);
-    if (!list) throw new Error('Sprechwünsche-Liste nicht gefunden!');
-
-    const vehicleLinks = Array.from(list.querySelectorAll(vehicleLinkSel));
-    totalRequests = vehicleLinks.length;
-    patientsDone = 0;
-    prisonersDone = 0;
-    skipped = 0;
-
-    updateProgress('▶️ Start');
-
-    // Auto-Stop: nix zu tun
-    if (AUTO_STOP_IF_EMPTY && totalRequests === 0) {
-      ticker('🛑 Keine Sprechwünsche vorhanden – Stop.');
-      updateProgress('🛑 Leer');
+      ticker('⛔ Bot läuft bereits');
       return;
     }
+    botRunning = true;
 
-    for (let i = 0; i < vehicleLinks.length; i++) {
-      const href = vehicleLinks[i].href;
-      updateProgress(`(${i + 1}/${totalRequests})`);
+    ticker('▶️ Abarbeitung gestartet');
+    const failures = [];
 
-      // 1) Erst Patient versuchen
-      try {
-        const doc = await fetchDoc(href);
-        const patientBtn = doc.querySelector(patientBtnSel);
-        if (patientBtn) {
-          console.log(' Patienten-Transport:', href);
-          ticker(' Patienten-Transport wird abgearbeitet');
-          await handlePatientTransport(href);
-          await sleep(250);
-          continue;
-        }
-      } catch (e) {
-        // ignorieren, wir probieren danach Gefangene
+    try {
+      const list = document.querySelector(requestListSel);
+      if (!list) throw new Error('Sprechwünsche-Liste nicht gefunden!');
+
+      const vehicleLinks = Array.from(list.querySelectorAll(vehicleLinkSel));
+      totalRequests = vehicleLinks.length;
+      patientsDone = 0;
+      prisonersDone = 0;
+      skipped = 0;
+
+      updateProgress('▶️ Start');
+
+      if (AUTO_STOP_IF_EMPTY && totalRequests === 0) {
+        ticker('🛑 Keine Sprechwünsche vorhanden – Stop.');
+        updateProgress('🛑 Leer');
+        return;
       }
 
-      // 2) Gefangene mit Retry
-      let successOrNoTask = false;
+      for (let i = 0; i < vehicleLinks.length; i++) {
+        const href = vehicleLinks[i].href;
+        updateProgress(`(${i + 1}/${totalRequests})`);
 
-      for (let attempt = 0; attempt <= PRISON_RETRIES; attempt++) {
+        // 1) Patient versuchen
         try {
-          if (attempt > 0) {
-            ticker(`Retry Gefangene (${attempt}/${PRISON_RETRIES}) …`);
-            await sleep(PRISON_RETRY_PAUSE);
+          const doc = await fetchDoc(href);
+          const patientBtn = doc.querySelector(patientBtnSel);
+
+          if (patientBtn) {
+            console.log('🚑 Patienten-Transport:', href);
+            ticker('🚑 Patienten-Transport wird abgearbeitet');
+            await handlePatientTransport(href);
+            await sleep(250);
+            continue;
           }
-
-          console.log(`Gefangenentransport (Attempt ${attempt + 1}):`, href);
-          ticker('Gefangenentransport wird abgearbeitet');
-
-          const done = await handlePrisonTransport(href);
-
-          if (done === false) {
-            // Kein Transport vorhanden → NICHT skippen
-            successOrNoTask = true;
-            break;
-          }
-
-          // done === true
-          successOrNoTask = true;
-          break;
-
         } catch (e) {
-          // beim letzten Versuch zählen wir es als echten Skip
-          if (attempt === PRISON_RETRIES) {
-            skipped++;
-            failures.push({ href, msg: e?.message || String(e) });
-            console.warn(' Übersprungen (Fehler):', href, e);
-            updateProgress('⚠️ Skip');
-            ticker(' Fehler beim Gefangenentransport');
-          } else {
-            console.warn('⚠️ Gefangenenversuch fehlgeschlagen, retry folgt:', href, e);
+          // ignorieren, danach Gefangene probieren
+        }
+
+        // 2) Gefangene mit Retry
+        for (let attempt = 0; attempt <= PRISON_RETRIES; attempt++) {
+          try {
+            if (attempt > 0) {
+              ticker(`🔁 Retry Gefangene (${attempt}/${PRISON_RETRIES}) …`);
+              await sleep(PRISON_RETRY_PAUSE);
+            }
+
+            console.log(`🚓 Gefangenentransport (Attempt ${attempt + 1}):`, href);
+            ticker('🚓 Gefangenentransport wird abgearbeitet');
+
+            const done = await handlePrisonTransport(href);
+
+            if (done === false) {
+              // kein Transport vorhanden → kein Skip, einfach weiter
+              break;
+            }
+
+            // done === true → fertig
+            break;
+
+          } catch (e) {
+            if (attempt === PRISON_RETRIES) {
+              skipped++;
+              failures.push({ href, msg: e?.message || String(e) });
+              console.warn('⏭️ Übersprungen (Fehler):', href, e);
+              updateProgress('⚠️ Skip');
+              ticker('⏭️ Fehler beim Gefangenentransport');
+            } else {
+              console.warn('⚠️ Gefangenenversuch fehlgeschlagen, retry folgt:', href, e);
+            }
           }
         }
+
+        await sleep(250);
       }
 
-      await sleep(250);
-    }
+      updateProgress('✅ Fertig');
+      ticker(`✅ Fertig: ${patientsDone} 🚑 | ${prisonersDone} 🚓 | ${skipped} ⏭️`);
+      console.log('[SprechwunschBot] fertig', { patientsDone, prisonersDone, skipped, totalRequests });
 
-    // Ende
-    updateProgress('✅ Fertig');
-    //ticker(`✅ Fertig:Einlieferung Krankenhaus: ${patientsDone} | Zellen: ${prisonersDone} | ${skipped}`);
-      ticker(`Fertig:Einlieferung Krankenhaus: ${patientsDone} | Zellen: ${prisonersDone}`);
-    console.log('[SprechwunschBot] fertig', { patientsDone, prisonersDone, skipped, totalRequests });
+      // Kein Reload (wie von dir gewünscht)
+      // window.location.reload();
 
-//botRunning = false;
+    } catch (e) {
+      console.error('Automatisierung abgebrochen:', e);
+      ticker('❌ Abbruch: ' + (e?.message || String(e)));
 
-    // Auto-Reload optional: wenn du es leise willst, lass es drin oder kommentier es aus
-//    window.location.reload();
+      if (!QUIET_MODE) {
+        alert('❌ ' + (e?.message || String(e)));
+      }
+    } finally {
+      botRunning = false;
 
-  } catch (e) {
-    console.error('Automatisierung abgebrochen:', e);
-    ticker('❌ Abbruch: ' + (e?.message || String(e)));
-
-    if (!QUIET_MODE) {
-      alert('❌ ' + (e?.message || String(e)));
-    }
-  } finally {
-    if (failures.length) {
-      console.group(`[SprechwunschBot] Failures: ${failures.length}`);
-      failures.forEach(f => console.log(f.msg, f.href));
-      console.groupEnd();
+      if (failures.length) {
+        console.group(`[SprechwunschBot] Failures: ${failures.length}`);
+        failures.forEach(f => console.log(f.msg, f.href));
+        console.groupEnd();
+      }
     }
   }
-}
 
+  // ===================== UI =====================
+  function addButton() {
+    const header = document.querySelector('#radio_panel_heading .flex-row');
+    if (!header || document.getElementById('invisible-auto-btn')) return;
 
+    // Button
+    const btn = document.createElement('button');
+    btn.id = 'invisible-auto-btn';
+    btn.textContent = 'Sprechwünsche ▶️';
+    btn.className = 'btn btn-primary btn-xs';
+    btn.style.marginLeft = '10px';
+    btn.title = 'Batch: Alle Sprechwünsche/Transporte abarbeiten';
+    btn.addEventListener('click', processAll);
+    header.appendChild(btn);
 
-function addButton() {
-  const header = document.querySelector('#radio_panel_heading .flex-row');
-  if (!header || document.getElementById('invisible-auto-btn')) return;
+    // Progress rechts neben Button
+    const progressEl = document.createElement('span');
+    progressEl.id = 'progress-status';
+    progressEl.style.marginLeft = '15px';
+    progressEl.style.fontWeight = 'bold';
+    progressEl.style.color = '#0055aa';
+    header.appendChild(progressEl);
 
-  // --- Button ---
-  const btn = document.createElement('button');
-  btn.id = 'invisible-auto-btn';
-  btn.textContent = 'Sprechwünsche ▶️';
-  btn.className = 'btn btn-primary btn-xs';
-  btn.style.marginLeft = '10px';
-  btn.title = 'Batch: Alle Sprechwünsche/Transporte abarbeiten';
-  btn.addEventListener('click', processAll);
-  header.appendChild(btn);
+    // Ticker: eigene Zeile UNTER den Buttons
+    const old = document.getElementById('progress-ticker-wrap');
+    if (old) old.remove();
 
-  // --- Progress (rechts neben Button) ---
-  const progressEl = document.createElement('span');
-  progressEl.id = 'progress-status';
-  progressEl.style.marginLeft = '15px';
-  progressEl.style.fontWeight = 'bold';
-  progressEl.style.color = '#0055aa';
-  header.appendChild(progressEl);
+    const wrap = document.createElement('div');
+    wrap.id = 'progress-ticker-wrap';
+    wrap.style.marginTop = '6px';
+    wrap.style.padding = '4px 8px';
+    wrap.style.borderTop = '1px solid rgba(0,0,0,0.08)';
+    wrap.style.fontSize = '11px';
+    wrap.style.color = '#333';
+    wrap.style.whiteSpace = 'nowrap';
+    wrap.style.overflow = 'hidden';
+    wrap.style.textOverflow = 'ellipsis';
 
-  // --- Ticker: eigene Zeile UNTER dem Header (unterhalb der Buttons) ---
-  // Wir hängen ihn nicht in die Flex-Zeile rein, sondern direkt darunter.
-  const panelHeading = document.getElementById('radio_panel_heading');
-  if (!panelHeading) return;
+    // Zentrieren
+    wrap.style.display = 'flex';
+    wrap.style.justifyContent = 'center';
 
-  // Falls schon vorhanden (z.B. wegen Re-render), vorher entfernen
-  const old = document.getElementById('progress-ticker-wrap');
-  if (old) old.remove();
+    const tickerEl = document.createElement('div');
+    tickerEl.id = 'progress-ticker';
+    tickerEl.textContent = 'Bereit.';
+    tickerEl.style.transition = 'transform 120ms ease';
+    tickerEl.style.textAlign = 'center';
 
-  const wrap = document.createElement('div');
-  wrap.id = 'progress-ticker-wrap';
-  wrap.style.marginTop = '6px';
-  wrap.style.padding = '4px 8px';
-  wrap.style.borderTop = '1px solid rgba(0,0,0,0.08)';
-  wrap.style.fontSize = '11px';
-  wrap.style.color = '#333';
-  wrap.style.whiteSpace = 'nowrap';
-  wrap.style.overflow = 'hidden';
-  wrap.style.textOverflow = 'ellipsis';
-  wrap.style.display = 'flex';
-  wrap.style.justifyContent = 'center';
+    wrap.appendChild(tickerEl);
 
-  const tickerEl = document.createElement('div');
-  tickerEl.id = 'progress-ticker';
-  tickerEl.textContent = 'Bereit.';
-  tickerEl.style.transition = 'transform 120ms ease';
-  tickerEl.style.textAlign = 'center';
-  wrap.appendChild(tickerEl);
+    // Direkt nach der Button-Zeile einfügen
+    header.insertAdjacentElement('afterend', wrap);
 
-  // Direkt NACH der Header-Zeile einfügen (unterhalb der Buttons)
-  header.insertAdjacentElement('afterend', wrap);
-}
-
-
+    // Initiale Anzeige
+    updateProgress('Bereit');
+  }
 
   new MutationObserver(addButton).observe(document.body, { childList: true, subtree: true });
   addButton();
